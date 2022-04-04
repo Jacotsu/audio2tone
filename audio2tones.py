@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
-import sys
 import logging
 import datetime
-import pdb
-from multiprocessing import Pool
-
+import argparse
 
 import audiofile
 import numpy as np
 from scipy.fft import fft, fftfreq
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 
 
 mcus = {
@@ -86,6 +82,17 @@ def compress_pwm_audio(duration, frequency, modules):
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description='Turn audio files into arduino tones'
+    )
+    parser.add_argument(
+        '-f',
+        '--flatten_volume',
+        action=argparse.BooleanOptionalAction
+    )
+
+    parser.add_argument('filename', help='filename to convert')
+    args = parser.parse_args()
 
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s | %(message)s",
@@ -94,11 +101,11 @@ def main():
 
     mcu = mcus["ATmega328P"]
 
-    logging.info(f"Loading file: {sys.argv[1]}")
-    samples, sampling_rate = audiofile.read(sys.argv[1])
+    logging.info(f"Loading file: {args.filename}")
+    samples, sampling_rate = audiofile.read(args.filename)
     duration = len(samples[0])/sampling_rate
 
-    logging.info(f"Loaded file: {sys.argv[1]}")
+    logging.info(f"Loaded file: {args.filename}")
     logging.info(f"Channels: {len(samples)}")
     logging.info(f"Sampling rate: {sampling_rate} Hz")
     logging.info(f"Samples: {len(samples[0])}")
@@ -110,7 +117,6 @@ def main():
         np.amax(samples, axis=0),
         np.zeros(len(samples[0]))
     )
-
 
     # Define the number of samples to analyze for each window
     resampled_data_size = round(duration * mcu["playback_sampling_rate"])
@@ -128,15 +134,9 @@ def main():
     logging.info("Calculating FFT and resampling")
     with tqdm(desc="Processed windows", total=resampled_data_size) as pbar:
 
-#        with Pool(8) as p:
-#            print(p.map(f, [1, 2, 3]))
-#            p.imap(
-#                get_dominant_freq_and_module,
-#
-#            )
-#
-
-        for x, i in enumerate(np.array_split(merged_channels, resampled_data_size)):
+        for x, i in enumerate(
+            np.array_split(merged_channels, resampled_data_size)
+        ):
             dominant_freq, max_module = get_dominant_freq_and_module(
                 i, sampling_rate, fourier_window_size
             )
@@ -146,7 +146,6 @@ def main():
             frequencies[x] = dominant_freq
             modules[x] = max_module
             pbar.update(1)
-
 
     # Quantize the frequencies into the avaialble buckets
     bins = np.geomspace(
@@ -166,7 +165,11 @@ def main():
         (0, mcu["pwm_duty_cycle_max_value"])
     ).astype(np.int16)
 
-
+    if args.flatten_volume:
+        logging.info("Flattening volumes")
+        normalized_modules = np.digitize(
+            normalized_modules, [0, 255], right=True
+        )*255
     data = compress_pwm_audio(
         durations, freq_indexes, normalized_modules
     )
