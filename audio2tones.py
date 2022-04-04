@@ -2,6 +2,7 @@
 import sys
 import logging
 import datetime
+import pdb
 from multiprocessing import Pool
 
 
@@ -30,14 +31,14 @@ mcus = {
 def print_result(filename, data):
     with open(filename, "w") as f:
         f.write(f"int soundDataLen = {len(data)};\n")
-        f.write("int soundData[][3] = {\n")
+        f.write("int soundData[][3] = {\n    ")
         for i, d in enumerate(data[:-1], start=1):
             duration, freq, mod = d
-            f.write(f"{{0x{duration:04X},0x{freq:02X},0x{mod:02X}}},")
+            f.write(f"{{0x{duration:08X},0x{freq:01X},0x{mod:02X}}},")
             if i % 3 == 0:
-                f.write("\n")
+                f.write("\n    ")
 
-        f.write(f"{{0x{data[-1][0]:04X},0x{data[-1][1]:02X},"
+        f.write(f"{{0x{data[-1][0]:08X},0x{data[-1][1]:01X},"
                 f"0x{data[-1][2]:02X}}}\n}};")
 
 
@@ -85,6 +86,7 @@ def compress_pwm_audio(duration, frequency, modules):
 
 
 def main():
+
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s | %(message)s",
         level=logging.INFO
@@ -117,7 +119,7 @@ def main():
     # Initialize default durations
     durations = np.full(
         resampled_data_size + 1,
-        1/mcu["playback_sampling_rate"],
+        1/mcu["playback_sampling_rate"]*10e6,
         dtype=np.int16
     )
     frequencies = np.empty(resampled_data_size + 1)
@@ -135,10 +137,10 @@ def main():
 #
 
         for x, i in enumerate(np.array_split(merged_channels, resampled_data_size)):
-
             dominant_freq, max_module = get_dominant_freq_and_module(
                 i, sampling_rate, fourier_window_size
             )
+            logging.debug(f"Chunk {x}: {dominant_freq}  Hz")
 
             # Append to the data
             frequencies[x] = dominant_freq
@@ -155,19 +157,10 @@ def main():
     bins[0] = 0
     freq_indexes = np.digitize(frequencies, bins[::-1])
 
-    quantized_freqs = np.fromiter(
-        map(lambda x: mcu["available_freqs"][x]
-            if x < len(mcu["available_freqs"]) else 0,
-            freq_indexes
-            ),
-        dtype=np.int16
-    )
-
-
-    # Normalize wave pulses to PWM values
+    # Basic dynamic range compression
     compressed_range_modules = np.log(modules + 1)
+    # Normalize wave pulses to PWM values
     normalized_modules = np.interp(
-        # Basic dynamic range compression
         compressed_range_modules,
         (0, compressed_range_modules.max()),
         (0, mcu["pwm_duty_cycle_max_value"])
@@ -175,10 +168,9 @@ def main():
 
 
     data = compress_pwm_audio(
-        durations, quantized_freqs, normalized_modules
+        durations, freq_indexes, normalized_modules
     )
 
-    data = [*zip(durations, quantized_freqs, normalized_modules)]
     print_result("result.txt", data)
 
 
