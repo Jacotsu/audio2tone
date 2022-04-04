@@ -154,10 +154,6 @@ def main():
     )
     bins[0] = 0
     freq_indexes = np.digitize(frequencies, bins[::-1])
-    plt.hist(frequencies, density=True, bins=6)
-    plt.show()
-    import pdb
-    pdb.set_trace()
 
     quantized_freqs = np.fromiter(
         map(lambda x: mcu["available_freqs"][x]
