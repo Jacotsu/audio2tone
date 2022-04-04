@@ -15,4 +15,4 @@ audio2tones.py {filename}
 ```
 
 The resulting tones array will be written in `result.txt` in the following format
-`[duration in milliseconds, tone frequency, tone volume]`
+`[duration in microseconds, tone frequency, tone volume]`
